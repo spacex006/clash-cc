@@ -11,7 +11,7 @@ from typing import Dict, List
 
 import yaml
 
-_INTERNAL_KEYS = {"_uri", "_latency_ms", "_country"}
+_INTERNAL_KEYS = {"_uri", "_latency_ms", "_country", "_resolved_ip"}
 
 
 def _clean_proxy(p: Dict) -> Dict:
@@ -26,7 +26,7 @@ def build_config(proxies: List[Dict]) -> Dict:
     names = [p["name"] for p in clean_proxies]
 
     # ── گروه‌بندی بر اساس کشور ─────────────────────────────────────────────
-    from .geo import country_flag, COUNTRY_NAMES
+ from .geo import country_flag
 
     country_groups = defaultdict(list)
     for p in proxies:
@@ -88,8 +88,7 @@ def build_config(proxies: List[Dict]) -> Dict:
     for country in sorted(big_countries.keys(), key=lambda c: -len(big_countries[c])):
         c_names = big_countries[country]
         flag = country_flag(country)
-        cname = COUNTRY_NAMES.get(country, country)
-        group_name = f"{flag} {cname}"
+        group_name = f"{flag} {country}"
 
         country_group_objs.append({
             "name": group_name,
