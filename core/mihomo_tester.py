@@ -32,7 +32,7 @@ IP_LOOKUP_URL  = "http://ifconfig.me/ip"
 TEST_TIMEOUT   = 5000   # ms
 HTTP_TIMEOUT   = 8      # seconds
 WORKERS        = 50
-STARTUP_WAIT   = 5      # seconds
+STARTUP_WAIT   = 15      # seconds
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -147,23 +147,44 @@ def _start_mihomo(config: Dict) -> Optional[subprocess.Popen]:
     try:
         proc = subprocess.Popen(
             [str(MIHOMO_BIN), "-f", str(MIHOMO_CONFIG), "-d", "/tmp/mihomo_data"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
     except Exception as e:
         print(f"  [mihomo] ❌ خطا در اجرا: {e}")
         return None
 
     # صبر تا API آماده بشه
-    for _ in range(STARTUP_WAIT * 2):
+    for attempt in range(STARTUP_WAIT * 2):
         try:
-            urllib.request.urlopen(f"{MIHOMO_API}/version", timeout=1).read()
-            print(f"  [mihomo] ✅ API آماده شد")
+            urllib.request.urlopen(f"{MIHOMO_API}/version", timeout=2).read()
+            print(f"  [mihomo] ✅ API آماده شد (بعد از {attempt * 0.5:.1f}s)")
             return proc
         except Exception:
             time.sleep(0.5)
 
-    print(f"  [mihomo] ❌ API آماده نشد")
+        # چک کن آیا Mihomo کرش کرده
+        if proc.poll() is not None:
+            stdout = proc.stdout.read().decode(errors="replace")[-2000:]
+            stderr = proc.stderr.read().decode(errors="replace")[-2000:]
+            print(f"  [mihomo] ❌ Mihomo خاتمه یافت با کد {proc.returncode}")
+            if stdout:
+                print(f"  [mihomo] stdout: {stdout}")
+            if stderr:
+                print(f"  [mihomo] stderr: {stderr}")
+            return None
+
+    # تایم‌اوت
+    print(f"  [mihomo] ❌ API آماده نشد بعد از {STARTUP_WAIT}s")
+    try:
+        stdout = proc.stdout.read(2000).decode(errors="replace")
+        stderr = proc.stderr.read(2000).decode(errors="replace")
+        if stdout:
+            print(f"  [mihomo] stdout: {stdout}")
+        if stderr:
+            print(f"  [mihomo] stderr: {stderr}")
+    except Exception:
+        pass
     proc.kill()
     return None
 
