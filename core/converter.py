@@ -13,8 +13,7 @@ import yaml
 
 from .geo import country_flag
 
-_INTERNAL_KEYS = {"_uri", "_latency_ms", "_country", "_resolved_ip"}
-
+_INTERNAL_KEYS = {"_uri", "_latency_ms", "_country", "_resolved_ip", "_is_cdn"}
 
 def _clean_proxy(p: Dict) -> Dict:
     return {k: v for k, v in p.items() if k not in _INTERNAL_KEYS}
