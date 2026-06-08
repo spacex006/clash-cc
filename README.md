@@ -1,2 +1,2 @@
-# clash-lite
+# CLASH CC
 
