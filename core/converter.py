@@ -26,8 +26,7 @@ def build_config(proxies: List[Dict]) -> Dict:
     names = [p["name"] for p in clean_proxies]
 
     # ── گروه‌بندی بر اساس کشور ─────────────────────────────────────────────
- from .geo import country_flag
-
+     from .geo import country_flag
     country_groups = defaultdict(list)
     for p in proxies:
         country = p.get("_country", "XX")
