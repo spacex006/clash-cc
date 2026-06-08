@@ -74,8 +74,21 @@ def country_flag(code: str) -> str:
 def _build_mihomo_config(proxies: List[Dict]) -> Dict:
     """ساخت config مینیمال Mihomo فقط برای تست."""
     clean = []
+    seen_names: Dict[str, int] = {}
+    
     for p in proxies:
         cp = {k: v for k, v in p.items() if not k.startswith("_")}
+        
+        # اطمینان از یکتا بودن نام
+        original_name = cp.get("name", "proxy")
+        name = original_name
+        if name in seen_names:
+            seen_names[name] += 1
+            name = f"{original_name}#{seen_names[original_name]}"
+            cp["name"] = name
+        else:
+            seen_names[name] = 0
+        
         clean.append(cp)
 
     names = [p["name"] for p in clean]
@@ -303,6 +316,18 @@ def http_test_all(proxies: List[Dict]) -> List[Dict]:
     if not proxies:
         return []
 
+    # یکتاسازی نام‌ها قبل از Mihomo
+    seen_names: Dict[str, int] = {}
+    for p in proxies:
+        original_name = p.get("name", "proxy")
+        name = original_name
+        if name in seen_names:
+            seen_names[name] += 1
+            name = f"{original_name}#{seen_names[original_name]}"
+            p["name"] = name
+        else:
+            seen_names[name] = 0
+    
     print(f"  [mihomo] ساخت config برای {len(proxies)} proxy …")
     config = _build_mihomo_config(proxies)
 
