@@ -2,20 +2,20 @@ name: 🔄 Proxy Pipeline
 
 on:
   schedule:
-    - cron: '0 */2 * * *'   # هر ۲ ساعت یکبار
-  workflow_dispatch:          # اجرای دستی از تب Actions
+    - cron: '0 */6 * * *'   # هر ۶ ساعت
+  workflow_dispatch:
   push:
     paths:
-      - 'urls.txt'            # با تغییر سورس‌ها اتوماتیک اجرا شود
+      - 'urls.txt'
 
 permissions:
   contents: write
 
 jobs:
   run:
-    name: Fetch → Dedup → Fix → Geo → Convert → Validate
+    name: Fetch → Test → Geo → Convert
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
 
     steps:
       - name: ⬇️ Checkout
@@ -30,18 +30,25 @@ jobs:
       - name: 📦 Install dependencies
         run: pip install -r requirements.txt
 
-      - name: 🌍 Download GeoLite2 database
+      - name: 🌍 Download GeoLite2
         run: |
           curl -fsSL -o Country.mmdb \
             https://raw.githubusercontent.com/P3TERX/GeoLite.mmdb/download/GeoLite2-Country.mmdb
           ls -lh Country.mmdb
 
+      - name: 🚀 Download Mihomo
+        run: |
+          MIHOMO_VERSION=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | grep tag_name | cut -d '"' -f 4)
+          echo "Mihomo version: $MIHOMO_VERSION"
+          curl -fsSL -o mihomo.gz \
+            "https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/mihomo-linux-amd64-${MIHOMO_VERSION}.gz"
+          gunzip mihomo.gz
+          chmod +x mihomo
+          ./mihomo -v
+          ls -lh mihomo
+
       - name: 🚀 Run pipeline
         run: python main.py
-
-      - name: 🐛 Debug
-        run: python debug.py
-        continue-on-error: true
 
       - name: 💾 Commit & push
         run: |
