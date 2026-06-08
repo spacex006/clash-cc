@@ -11,6 +11,7 @@ import signal
 import socket
 import subprocess
 import time
+import urllib.parse
 import urllib.request
 import urllib.error
 from collections import Counter, defaultdict
@@ -24,15 +25,35 @@ import yaml
 # تنظیمات
 # ──────────────────────────────────────────────────────────────────────────────
 
-MIHOMO_BIN     = Path("./mihomo")
 MIHOMO_CONFIG  = Path("/tmp/mihomo_test_config.yaml")
 MIHOMO_API     = "http://127.0.0.1:9090"
 TEST_URL       = "http://cp.cloudflare.com/generate_204"
 IP_LOOKUP_URL  = "http://ifconfig.me/ip"
-TEST_TIMEOUT   = 5000   # ms (برای Mihomo)
-HTTP_TIMEOUT   = 8      # seconds (برای requests پایتون)
-WORKERS        = 50     # تست موازی
-STARTUP_WAIT   = 5      # ثانیه برای آماده شدن Mihomo
+TEST_TIMEOUT   = 5000   # ms
+HTTP_TIMEOUT   = 8      # seconds
+WORKERS        = 50
+STARTUP_WAIT   = 5      # seconds
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# پیدا کردن binary mihomo
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _find_mihomo() -> Path:
+    """جستجوی binary mihomo در چند مکان."""
+    candidates = [
+        Path.cwd() / "mihomo",
+        Path("./mihomo").resolve(),
+        Path("/usr/local/bin/mihomo"),
+        Path("/usr/bin/mihomo"),
+    ]
+    for c in candidates:
+        if c.exists() and c.is_file():
+            return c.resolve()
+    return Path.cwd() / "mihomo"
+
+
+MIHOMO_BIN = _find_mihomo()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -52,7 +73,6 @@ def country_flag(code: str) -> str:
 
 def _build_mihomo_config(proxies: List[Dict]) -> Dict:
     """ساخت config مینیمال Mihomo فقط برای تست."""
-    # حذف فیلدهای داخلی
     clean = []
     for p in proxies:
         cp = {k: v for k, v in p.items() if not k.startswith("_")}
@@ -80,9 +100,9 @@ def _build_mihomo_config(proxies: List[Dict]) -> Dict:
 # Mihomo process management
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _start_mihomo(config: Dict) -> subprocess.Popen:
+def _start_mihomo(config: Dict) -> Optional[subprocess.Popen]:
     """Mihomo رو با config داده شده اجرا میکنه."""
-    # quote کردن فیلدهای حساس مثل converter اصلی
+    # quote کردن فیلدهای حساس
     class QuotedStr(str):
         pass
 
@@ -111,11 +131,28 @@ def _start_mihomo(config: Dict) -> subprocess.Popen:
         encoding="utf-8",
     )
 
-    proc = subprocess.Popen(
-        [str(MIHOMO_BIN), "-f", str(MIHOMO_CONFIG), "-d", "/tmp/mihomo_data"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    # چک کن binary موجوده
+    if not MIHOMO_BIN.exists():
+        print(f"  [mihomo] ❌ binary پیدا نشد: {MIHOMO_BIN}")
+        print(f"  [mihomo] cwd: {Path.cwd()}")
+        try:
+            files = [f.name for f in Path.cwd().iterdir()][:30]
+            print(f"  [mihomo] فایل‌های cwd: {files}")
+        except Exception:
+            pass
+        return None
+
+    print(f"  [mihomo] استفاده از binary: {MIHOMO_BIN}")
+
+    try:
+        proc = subprocess.Popen(
+            [str(MIHOMO_BIN), "-f", str(MIHOMO_CONFIG), "-d", "/tmp/mihomo_data"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        print(f"  [mihomo] ❌ خطا در اجرا: {e}")
+        return None
 
     # صبر تا API آماده بشه
     for _ in range(STARTUP_WAIT * 2):
@@ -131,14 +168,17 @@ def _start_mihomo(config: Dict) -> subprocess.Popen:
     return None
 
 
-def _stop_mihomo(proc: subprocess.Popen):
+def _stop_mihomo(proc: Optional[subprocess.Popen]):
     """خاتمه Mihomo."""
     if proc:
         try:
             proc.send_signal(signal.SIGTERM)
             proc.wait(timeout=5)
         except Exception:
-            proc.kill()
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -146,14 +186,11 @@ def _stop_mihomo(proc: subprocess.Popen):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _test_proxy_api(proxy_name: str) -> Optional[int]:
-    """
-    تست proxy از طریق Mihomo API.
-    برمی‌گرداند: latency (ms) یا None.
-    """
+    """تست proxy از طریق Mihomo API. برمی‌گرداند: latency (ms) یا None."""
     try:
-        # encode نام proxy
         encoded = urllib.parse.quote(proxy_name, safe="")
-        url = f"{MIHOMO_API}/proxies/{encoded}/delay?url={urllib.parse.quote(TEST_URL)}&timeout={TEST_TIMEOUT}"
+        url = (f"{MIHOMO_API}/proxies/{encoded}/delay"
+               f"?url={urllib.parse.quote(TEST_URL)}&timeout={TEST_TIMEOUT}")
 
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
@@ -164,17 +201,15 @@ def _test_proxy_api(proxy_name: str) -> Optional[int]:
 
 
 def _get_ip_via_proxy(proxy_name: str) -> Optional[str]:
-    """
-    IP خروجی واقعی proxy رو میگیره.
-    اول proxy رو در گروه TEST انتخاب میکنیم، بعد از طریق mixed-port وصل میشیم.
-    """
+    """IP خروجی واقعی proxy رو میگیره."""
     try:
         # ست کردن proxy فعلی در گروه TEST
-        encoded = urllib.parse.quote(proxy_name, safe="")
         url = f"{MIHOMO_API}/proxies/TEST"
         data = json.dumps({"name": proxy_name}).encode("utf-8")
-        req = urllib.request.Request(url, data=data, method="PUT",
-                                     headers={"Content-Type": "application/json"})
+        req = urllib.request.Request(
+            url, data=data, method="PUT",
+            headers={"Content-Type": "application/json"},
+        )
         urllib.request.urlopen(req, timeout=3).read()
 
         # request از طریق mixed-port
@@ -193,7 +228,7 @@ def _get_ip_via_proxy(proxy_name: str) -> Optional[str]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# GeoIP local (با MaxMind)
+# GeoIP local
 # ──────────────────────────────────────────────────────────────────────────────
 
 _geo_reader = None
@@ -224,52 +259,24 @@ def _lookup_country(ip: str) -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# تست batch
-# ──────────────────────────────────────────────────────────────────────────────
-
-def _test_one(p: Dict) -> Optional[Dict]:
-    """
-    یه proxy رو تست میکنه و در صورت زنده بودن:
-    - latency
-    - IP خروجی واقعی
-    - کشور واقعی
-    رو ضمیمه میکنه.
-    """
-    name = p.get("name", "")
-
-    # ① latency test
-    latency = _test_proxy_api(name)
-    if latency is None or latency <= 0 or latency >= TEST_TIMEOUT:
-        return None
-
-    # ② IP خروجی واقعی
-    real_ip = _get_ip_via_proxy(name)
-    if not real_ip:
-        # proxy کار میکنه ولی IP نگرفتیم
-        country = "XX"
-    else:
-        country = _lookup_country(real_ip)
-
-    p = dict(p)
-    p["_latency_ms"] = latency
-    p["_real_ip"] = real_ip or ""
-    p["_real_country"] = country
-    return p
-
-
-# ──────────────────────────────────────────────────────────────────────────────
 # تابع اصلی
 # ──────────────────────────────────────────────────────────────────────────────
 
 def http_test_all(proxies: List[Dict]) -> List[Dict]:
-    """
-    تست همه proxy ها با Mihomo:
-    - حذف proxy های مرده
-    - دریافت کشور واقعی از IP خروجی
-    - بازنویسی نام
-    """
+    """تست همه proxy ها با Mihomo."""
+    # refresh کن MIHOMO_BIN
+    global MIHOMO_BIN
+    MIHOMO_BIN = _find_mihomo()
+
     if not MIHOMO_BIN.exists():
-        print(f"  [mihomo] ⚠ {MIHOMO_BIN} یافت نشد — رد میشه")
+        print(f"  [mihomo] ⚠ binary یافت نشد")
+        print(f"  [mihomo] cwd: {Path.cwd()}")
+        print(f"  [mihomo] جستجو شد: {MIHOMO_BIN}")
+        try:
+            files = [f.name for f in Path.cwd().iterdir()][:30]
+            print(f"  [mihomo] فایل‌های موجود: {files}")
+        except Exception:
+            pass
         return proxies
 
     if not proxies:
@@ -284,18 +291,13 @@ def http_test_all(proxies: List[Dict]) -> List[Dict]:
         return proxies
 
     try:
-        print(f"  [mihomo] شروع تست با {WORKERS} thread موازی …")
-        alive: List[Dict] = []
+        print(f"  [mihomo] شروع latency test با {WORKERS} thread موازی …")
+
+        # ── مرحله ۱: latency test (موازی) ──
+        latencies: Dict[int, int] = {}
         total = len(proxies)
         done = 0
 
-        # تست‌ها رو تک تک انجام میدیم چون نیاز به PUT روی گروه TEST داریم
-        # که نباید همزمان باشه. ولی latency test میتونه موازی باشه.
-        # راه‌حل: اول همه latency ها، بعد فقط زنده‌ها رو IP test
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        # ── مرحله ۱: latency test (موازی) ──────────────────────────
-        latencies = {}
         with ThreadPoolExecutor(max_workers=WORKERS) as ex:
             futs = {ex.submit(_test_proxy_api, p["name"]): i for i, p in enumerate(proxies)}
             for fut in as_completed(futs):
@@ -308,15 +310,18 @@ def http_test_all(proxies: List[Dict]) -> List[Dict]:
                     pass
                 done += 1
                 if done % 100 == 0:
-                    print(f"  [mihomo] {done}/{total} latency تست شد، {len(latencies)} زنده")
+                    print(f"  [mihomo] {done}/{total} latency, {len(latencies)} زنده")
 
-        print(f"  [mihomo] latency test: {len(latencies)}/{total} زنده")
+        print(f"  [mihomo] ✅ latency test: {len(latencies)}/{total} زنده")
 
-        # ── مرحله ۲: IP test (سریال چون باید گروه TEST رو تغییر بدیم) ──
-        print(f"  [mihomo] گرفتن IP خروجی واقعی …")
+        # ── مرحله ۲: IP test (سریال) ──
+        print(f"  [mihomo] گرفتن IP خروجی واقعی برای {len(latencies)} proxy …")
+        alive: List[Dict] = []
+
         for i, p in enumerate(proxies):
             if i not in latencies:
                 continue
+
             real_ip = _get_ip_via_proxy(p["name"])
             country = _lookup_country(real_ip) if real_ip else "XX"
 
@@ -329,11 +334,13 @@ def http_test_all(proxies: List[Dict]) -> List[Dict]:
             if len(alive) % 50 == 0:
                 print(f"  [mihomo] {len(alive)}/{len(latencies)} IP گرفته شد")
 
-        # ── مرحله ۳: بازنویسی نام بر اساس کشور واقعی ──────────────
-        from collections import defaultdict
-        counter = defaultdict(int)
-        alive.sort(key=lambda p: (p.get("_real_country", "XX"), p.get("_latency_ms", 9999)))
+        print(f"  [mihomo] ✅ IP test کامل: {len(alive)} proxy")
 
+        # ── مرحله ۳: مرتب‌سازی + بازنویسی نام ──
+        alive.sort(key=lambda p: (p.get("_real_country", "XX"),
+                                   p.get("_latency_ms", 9999)))
+
+        counter: Dict[str, int] = defaultdict(int)
         for p in alive:
             country = p.get("_real_country", "XX")
             counter[country] += 1
@@ -343,7 +350,7 @@ def http_test_all(proxies: List[Dict]) -> List[Dict]:
             port = p.get("port", 0)
             lat = p.get("_latency_ms", 0)
 
-            if real_ip and ":" in real_ip:
+            if real_ip and ":" in real_ip and not real_ip.replace(".", "").isdigit():
                 ip_display = f"[{real_ip}]"
             else:
                 ip_display = real_ip or "?"
@@ -351,8 +358,7 @@ def http_test_all(proxies: List[Dict]) -> List[Dict]:
             p["_country"] = country
             p["name"] = f"{flag} {country}{idx} | {ip_display} ({lat}ms)"[:80]
 
-        # آمار
-        from collections import Counter
+        # ── آمار ──
         stats = Counter(p.get("_real_country", "XX") for p in alive)
         print(f"\n  [mihomo] توزیع کشورهای واقعی:")
         for country, cnt in stats.most_common(20):
