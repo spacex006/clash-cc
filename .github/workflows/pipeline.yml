@@ -2,7 +2,7 @@ name: 🔄 Proxy Pipeline
 
 on:
   schedule:
-    - cron: '0 */2 * * *'   # هر ۶ ساعت یکبار
+    - cron: '0 */2 * * *'   # هر ۲ ساعت یکبار
   workflow_dispatch:          # اجرای دستی از تب Actions
   push:
     paths:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   run:
-    name: Fetch → Dedup → Fix → Convert → Validate
+    name: Fetch → Dedup → Fix → Geo → Convert → Validate
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -28,14 +28,21 @@ jobs:
           cache: pip
 
       - name: 📦 Install dependencies
-        run: pip install requests pyyaml
+        run: pip install -r requirements.txt
+
+      - name: 🌍 Download GeoLite2 database
+        run: |
+          curl -fsSL -o Country.mmdb \
+            https://raw.githubusercontent.com/P3TERX/GeoLite.mmdb/download/GeoLite2-Country.mmdb
+          ls -lh Country.mmdb
 
       - name: 🚀 Run pipeline
         run: python main.py
 
-      - name: 🐛 Debuge
+      - name: 🐛 Debug
         run: python debug.py
-          
+        continue-on-error: true
+
       - name: 💾 Commit & push
         run: |
           git config user.name  "github-actions[bot]"
