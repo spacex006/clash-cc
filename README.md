@@ -1,2 +1,2 @@
-# CLASH CC VER 1.3
+# CLASH CC ver 1.3
 
