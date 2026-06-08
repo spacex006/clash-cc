@@ -2,7 +2,7 @@ name: 🔄 Proxy Pipeline
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # هر ۶ ساعت
+    - cron: '0 */6 * * *'
   workflow_dispatch:
   push:
     paths:
@@ -44,26 +44,19 @@ jobs:
           MIHOMO_VERSION=$(echo "$RELEASE_JSON" | grep -oP '"tag_name":\s*"\K[^"]+' | head -1)
           echo "Mihomo version: $MIHOMO_VERSION"
           
-          # پیدا کردن asset مناسب (linux-amd64 با هر فرمتی)
           ASSET_URL=$(echo "$RELEASE_JSON" | grep -oP '"browser_download_url":\s*"\K[^"]+' | grep -i 'linux-amd64' | grep -v 'compatible' | grep -E '\.(gz|tar\.gz)$' | head -1)
           
           if [ -z "$ASSET_URL" ]; then
-            echo "❌ Asset پیدا نشد. لیست همه assets:"
-            echo "$RELEASE_JSON" | grep -oP '"browser_download_url":\s*"\K[^"]+'
+            echo "❌ Asset پیدا نشد."
             exit 1
           fi
           
           echo "Asset URL: $ASSET_URL"
           curl -fsSL -o mihomo.gz "$ASSET_URL"
           
-          # extract
           if [[ "$ASSET_URL" == *.tar.gz ]]; then
             tar -xzf mihomo.gz
-            # پیدا کردن binary
-            BIN=$(find . -maxdepth 2 -name "mihomo*" -type f -executable | head -1)
-            if [ -z "$BIN" ]; then
-              BIN=$(find . -maxdepth 2 -name "mihomo*" -type f | head -1)
-            fi
+            BIN=$(find . -maxdepth 2 -name "mihomo*" -type f | head -1)
             mv "$BIN" mihomo
           else
             gunzip mihomo.gz
@@ -72,3 +65,18 @@ jobs:
           chmod +x mihomo
           ls -lh mihomo
           ./mihomo -v
+
+      - name: 🚀 Run pipeline
+        run: python main.py
+
+      - name: 💾 Commit & push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/configs.txt output/profile.yaml
+          if git diff --staged --quiet; then
+            echo "✅ تغییری نبود."
+          else
+            git commit -m "🔄 proxies updated $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
