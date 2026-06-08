@@ -1,0 +1,8 @@
+# ══════════════════════════════════════════════════════════════════
+# urls.txt
+# یک URL در هر خط  •  خطوط شروع‌شده با # نادیده گرفته می‌شوند
+# ══════════════════════════════════════════════════════════════════
+
+# ── Source ─────────────────────────────────────────────────────────
+https://raw.githubusercontent.com/10Dream/VpnClashFaCollector/refs/heads/main/sub/all/mixed.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/All_Configs_Sub.txt
