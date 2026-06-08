@@ -11,6 +11,8 @@ from typing import Dict, List
 
 import yaml
 
+from .geo import country_flag
+
 _INTERNAL_KEYS = {"_uri", "_latency_ms", "_country", "_resolved_ip"}
 
 
@@ -26,7 +28,6 @@ def build_config(proxies: List[Dict]) -> Dict:
     names = [p["name"] for p in clean_proxies]
 
     # ── گروه‌بندی بر اساس کشور ─────────────────────────────────────────────
-     from .geo import country_flag
     country_groups = defaultdict(list)
     for p in proxies:
         country = p.get("_country", "XX")
@@ -35,7 +36,10 @@ def build_config(proxies: List[Dict]) -> Dict:
     # حداقل 3 proxy برای ساخت گروه جداگانه
     MIN_PROXIES_PER_GROUP = 3
 
-    big_countries = {c: names for c, names in country_groups.items() if len(names) >= MIN_PROXIES_PER_GROUP}
+    big_countries = {
+        c: ns for c, ns in country_groups.items()
+        if len(ns) >= MIN_PROXIES_PER_GROUP
+    }
     small_countries = []
     for c, ns in country_groups.items():
         if len(ns) < MIN_PROXIES_PER_GROUP:
