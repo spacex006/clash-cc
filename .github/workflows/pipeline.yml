@@ -4,9 +4,6 @@ on:
   schedule:
     - cron: '0 */10 * * *'
   workflow_dispatch:
-  push:
-    paths:
-      - 'urls.txt'
 
 permissions:
   contents: write
@@ -67,6 +64,8 @@ jobs:
           ./mihomo -v
 
       - name: 🚀 Run pipeline
+        env:
+          URL: ${{ secrets.URL }}
         run: python main.py
 
       - name: 💾 Commit & push

@@ -81,13 +81,3 @@ def fetch_all(urls: List[str]) -> List[str]:
         print(f"  [fetcher] {len(fetched):>5} URIs  ←  {url}")
         all_uris.extend(fetched)
     return all_uris
-
-
-def read_url_list(path: str) -> List[str]:
-    """خواندن فایل urls.txt — خطوط comment و خالی فیلتر می‌شوند."""
-    with open(path, encoding="utf-8") as f:
-        return [
-            ln.strip()
-            for ln in f
-            if ln.strip() and not ln.strip().startswith("#")
-        ]

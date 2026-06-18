@@ -161,7 +161,8 @@ def _vless(uri: str) -> Optional[Dict]:
                     p["reality-opts"] = {"public-key": pbk, "short-id": sid}
 
         flow = q.get("flow", "").strip()
-        if flow:
+        VALID_FLOWS = {"xtls-rprx-vision", "xtls-rprx-direct"}
+        if flow and flow in VALID_FLOWS:
             p["flow"] = flow
 
         net = q.get("type", "tcp").lower()

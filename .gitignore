@@ -4,3 +4,4 @@ mihomo.gz
 __pycache__/
 *.pyc
 /tmp/
+urls.txt

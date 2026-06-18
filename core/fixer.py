@@ -123,6 +123,26 @@ def fix_ss_cipher(cipher) -> Tuple[str, bool]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# VLESS XTLS flow
+# ──────────────────────────────────────────────────────────────────────────────
+
+VALID_XTLS_FLOWS = frozenset({"xtls-rprx-vision", "xtls-rprx-direct"})
+
+
+def fix_vless_flow(flow) -> Tuple[str, bool]:
+    """
+    حذف flow نامعتبر XTLS.
+    Mihomo/FClash فقط xtls-rprx-vision و xtls-rprx-direct قبول می‌کنه.
+    """
+    raw = str(flow or "").strip()
+    if not raw:
+        return "", False
+    if raw in VALID_XTLS_FLOWS:
+        return raw, False
+    return "", True
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # اصلاح یک proxy
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -180,7 +200,15 @@ def fix_proxy(p: Dict) -> Tuple[Dict, List[str]]:
         except (TypeError, ValueError):
             p["alterId"] = 0
 
-    # ── ④ نام کنترلی ────────────────────────────────────────────────────────
+    # ── ④ VLESS flow ─────────────────────────────────────────────────────────
+    if p.get("type") == "vless" and "flow" in p:
+        raw_flow = p.get("flow", "")
+        fixed_flow, changed = fix_vless_flow(raw_flow)
+        if changed:
+            changes.append(f"[{name}] vless flow: {raw_flow!r} → removed (unsupported)")
+            p.pop("flow", None)
+
+    # ── ⑤ نام کنترلی ────────────────────────────────────────────────────────
     raw_name = p.get("name", "")
     clean_name = re.sub(r"[\x00-\x1f\x7f]", "", raw_name)
     if clean_name != raw_name:

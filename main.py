@@ -3,11 +3,11 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-URLS_FILE    = Path("urls.txt")
 CONFIGS_TXT  = Path("output/configs.txt")
 PROFILE_YAML = Path("output/profile.yaml")
 
@@ -33,7 +33,7 @@ def main() -> int:
     start = datetime.now(timezone.utc)
     print(f"🚀  clash-lite pipeline — {start.strftime('%Y-%m-%d %H:%M UTC')}")
 
-    from core.fetcher import read_url_list, fetch_all
+    from core.fetcher import fetch_all
     from core.parser import parse_many
     from core.deduplicator import deduplicate, tcp_filter_and_sort, unique_names
     from core.fixer import fix_all, post_fix_filter
@@ -42,11 +42,14 @@ def main() -> int:
     from core.converter import build_config, write_yaml
     from core.validator import print_report
 
-    if not URLS_FILE.exists():
-        print(f"❌ {URLS_FILE} یافت نشد.", file=sys.stderr)
+    # خواندن URL از متغیر محیطی یا متغیر secret
+    url = os.environ.get("URL", "").strip()
+    if not url:
+        print("❌ متغیر URL تنظیم نشده است.", file=sys.stderr)
+        print("   در GitHub Actions باید secret به نام URL تعریف شود.", file=sys.stderr)
         return 1
 
-    urls = read_url_list(str(URLS_FILE))
+    urls = [url]
     _banner("① FETCH", len(urls))
     raw_uris = fetch_all(urls)
     print(f"  جمع URI : {len(raw_uris):,}")
